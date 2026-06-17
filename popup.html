@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>公開前チェッカー</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0f0f11;
+    --surface: #1a1a1f;
+    --border: #2a2a32;
+    --text: #e8e8ed;
+    --muted: #6b6b78;
+    --ok: #34c77b;
+    --warn: #f5a623;
+    --error: #f04d4d;
+    --info: #5b8ef0;
+    --accent: #7c6aff;
+  }
+
+  body {
+    width: 380px;
+    min-height: 200px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* ヘッダー */
+  .header {
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .header-icon {
+    width: 28px;
+    height: 28px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    color: var(--text);
+  }
+
+  .header-url {
+    font-size: 11px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 240px;
+  }
+
+  /* スキャンボタン */
+  .scan-area {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .btn-scan {
+    width: 100%;
+    padding: 10px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: inherit;
+  }
+
+  .btn-scan:hover { opacity: 0.88; }
+  .btn-scan:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* スコアサマリー */
+  .summary {
+    padding: 12px 16px;
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .score-pill {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    text-align: center;
+  }
+
+  .score-pill .count {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 3px;
+  }
+
+  .score-pill .label {
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+  }
+
+  .score-pill.ok .count { color: var(--ok); }
+  .score-pill.warn .count { color: var(--warn); }
+  .score-pill.error .count { color: var(--error); }
+
+  /* チェック項目 */
+  .checks {
+    padding: 8px 0 16px;
+  }
+
+  .section-title {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 8px 16px 4px;
+  }
+
+  .check-item {
+    padding: 8px 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    transition: background 0.1s;
+  }
+
+  .check-item:hover { background: var(--surface); }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 4px;
+    flex-shrink: 0;
+  }
+
+  .status-dot.ok { background: var(--ok); }
+  .status-dot.warn { background: var(--warn); }
+  .status-dot.error { background: var(--error); }
+  .status-dot.info { background: var(--info); }
+
+  .check-content { flex: 1; min-width: 0; }
+
+  .check-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 1px;
+  }
+
+  .check-detail {
+    font-size: 11px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .check-detail.error-text { color: var(--error); }
+  .check-detail.warn-text { color: var(--warn); }
+  .check-detail.ok-text { color: var(--ok); }
+
+  /* 初期状態 */
+  .empty-state {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--muted);
+  }
+
+  .empty-icon { font-size: 32px; margin-bottom: 10px; }
+  .empty-text { font-size: 13px; }
+
+  /* ローディング */
+  .loading {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--muted);
+  }
+
+  .spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 0 auto 12px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* PageSpeedリンク */
+  .psi-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 16px 4px;
+    padding: 9px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--info);
+    font-size: 12px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .psi-link:hover { border-color: var(--info); }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 16px 4px;
+  }
+
+  /* OGPプレビューカード */
+  .ogp-preview {
+    margin: 4px 16px 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .ogp-preview-img {
+    width: 100%;
+    max-height: 110px;
+    object-fit: cover;
+    display: block;
+  }
+  .ogp-preview-img-placeholder {
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.04);
+    color: var(--muted);
+    font-size: 11px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ogp-preview-body { padding: 8px 10px 9px; }
+  .ogp-preview-domain {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+  }
+  .ogp-preview-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.35;
+    margin-bottom: 3px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .ogp-preview-desc {
+    font-size: 11px;
+    color: var(--muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .ogp-missing { color: var(--error) !important; }
+
+  /* アコーディオン */
+  .accordion-title {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .accordion-title:hover { color: var(--text); }
+  .accordion-chevron {
+    margin-left: auto;
+    font-size: 9px;
+    color: var(--muted);
+  }
+
+  /* バッジ */
+  .badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .badge.error { background: rgba(240,77,77,0.15); color: var(--error); }
+  .badge.warn { background: rgba(245,166,35,0.15); color: var(--warn); }
+  .badge.ok { background: rgba(52,199,123,0.15); color: var(--ok); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-icon">✓</div>
+  <div>
+    <div class="header-title">公開前チェッカー</div>
+    <div class="header-url" id="currentUrl">—</div>
+  </div>
+</div>
+
+<div class="scan-area">
+  <button class="btn-scan" id="btnScan">
+    <span>🔍</span> このページをチェック
+  </button>
+</div>
+
+<div id="resultArea">
+  <div class="empty-state">
+    <div class="empty-icon">📋</div>
+    <div class="empty-text">「チェック」を押すと<br>公開前の確認項目を一括チェックします</div>
+  </div>
+</div>
+
+<script src="src/popup.js"></script>
+</body>
+</html>
