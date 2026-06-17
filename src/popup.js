@@ -1,4 +1,4 @@
-// State 1: CSP修正済み・見出し構造改善前
+// State 2: 見出し構造ツリー追加済み・OGPカード/アコーディオン前
 
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   if (tabs[0]) document.getElementById('currentUrl').textContent = tabs[0].url;
@@ -37,7 +37,7 @@ function renderResults(r, pageUrl) {
 
   const titleStatus = r.meta.title.status === 'error' ? 'error' : r.meta.title.value === 'warn' ? 'warn' : 'ok';
   if (titleStatus === 'error') errorCount++; else if (titleStatus === 'warn') warnCount++; else okCount++;
-  items.push({ section: 'SEO・メタ情報', status: titleStatus, name: 'titleタグ', detail: titleStatus === 'error' ? '未設定' : titleStatus === 'warn' ? `長すぎ（${r.meta.title.text.length}文字）` : r.meta.title.text, detailClass: titleStatus === 'error' ? 'error-text' : titleStatus === 'warn' ? 'warn-text' : '' });
+  items.push({ section: 'SEO・メタ情報', status: titleStatus, name: 'titleタグ', detail: titleStatus === 'error' ? '未設定' : r.meta.title.text, detailClass: titleStatus === 'error' ? 'error-text' : titleStatus === 'warn' ? 'warn-text' : '' });
 
   const descStatus = r.meta.description.status;
   if (descStatus === 'error') errorCount++; else if (descStatus === 'warn') warnCount++; else okCount++;
@@ -51,9 +51,9 @@ function renderResults(r, pageUrl) {
   if (ogStatus === 'warn') warnCount++; else okCount++;
   items.push({ section: 'SEO・メタ情報', status: ogStatus, name: 'OGP（og:title / og:image）', detail: ogStatus === 'ok' ? '設定済み' : `og:title ${r.meta.ogTitle.status === 'ok' ? '✓' : '未設定'} / og:image ${r.meta.ogImage.status === 'ok' ? '✓' : '未設定'}`, detailClass: ogStatus === 'warn' ? 'warn-text' : '' });
 
-  const h1Status = r.headings.status;
-  if (h1Status === 'error') errorCount++; else if (h1Status === 'warn') warnCount++; else okCount++;
-  items.push({ section: 'SEO・メタ情報', status: h1Status, name: 'h1タグ', detail: h1Status === 'error' ? '未設定' : h1Status === 'warn' ? `複数設定（${r.headings.h1Count}個）` : `「${r.headings.h1Text.substring(0, 30)}」`, detailClass: h1Status === 'error' ? 'error-text' : h1Status === 'warn' ? 'warn-text' : '' });
+  // 見出し構造はitemsに入れずスコアのみカウント
+  const headingStatus = r.headings.status;
+  if (headingStatus === 'error') errorCount++; else if (headingStatus === 'warn') warnCount++; else okCount++;
 
   const imgStatus = r.images.status;
   if (imgStatus === 'error') errorCount++; else if (imgStatus === 'warn') warnCount++; else okCount++;
@@ -62,21 +62,40 @@ function renderResults(r, pageUrl) {
 
   const linkStatus = r.links.status;
   if (linkStatus === 'warn') warnCount++; else okCount++;
-  items.push({ section: 'アクセシビリティ', status: linkStatus, name: 'リンク確認', detail: linkStatus === 'warn' ? `空リンク ${r.links.empty}個あり（内部:${r.links.internal} 外部:${r.links.external}）` : `内部:${r.links.internal}本 外部:${r.links.external}本 問題なし`, detailClass: linkStatus === 'warn' ? 'warn-text' : '' });
+  items.push({ section: 'アクセシビリティ', status: linkStatus, name: 'リンク確認', detail: linkStatus === 'warn' ? `空リンク ${r.links.empty}個あり` : `内部:${r.links.internal}本 外部:${r.links.external}本 問題なし`, detailClass: linkStatus === 'warn' ? 'warn-text' : '' });
 
   const ga4Status = r.analytics.ga4.status;
   if (ga4Status === 'warn') warnCount++; else okCount++;
-  items.push({ section: 'アナリティクス・タグ', status: ga4Status, name: 'Google Analytics 4', detail: ga4Status === 'ok' ? 'タグ検出' : '未検出（不要な場合は無視してOK）', detailClass: ga4Status === 'warn' ? 'warn-text' : '' });
+  items.push({ section: 'アナリティクス・タグ', status: ga4Status, name: 'Google Analytics 4', detail: ga4Status === 'ok' ? 'タグ検出' : '未検出', detailClass: ga4Status === 'warn' ? 'warn-text' : '' });
 
   const gtmStatus = r.analytics.gtm.status;
   if (gtmStatus === 'warn') warnCount++; else okCount++;
-  items.push({ section: 'アナリティクス・タグ', status: gtmStatus, name: 'Google Tag Manager', detail: gtmStatus === 'ok' ? 'タグ検出' : '未検出（不要な場合は無視してOK）', detailClass: gtmStatus === 'warn' ? 'warn-text' : '' });
+  items.push({ section: 'アナリティクス・タグ', status: gtmStatus, name: 'Google Tag Manager', detail: gtmStatus === 'ok' ? 'タグ検出' : '未検出', detailClass: gtmStatus === 'warn' ? 'warn-text' : '' });
 
   items.push({ section: 'その他', status: 'info', name: 'コンソールエラー', detail: 'F12 DevTools → Consoleタブで確認', detailClass: '' });
 
   let html = `<div class="summary"><div class="score-pill ok"><div class="count">${okCount}</div><div class="label">OK</div></div><div class="score-pill warn"><div class="count">${warnCount}</div><div class="label">要確認</div></div><div class="score-pill error"><div class="count">${errorCount}</div><div class="label">要修正</div></div></div><div class="checks">`;
+
+  // 見出し構造ツリー
+  html += `<div class="section-title">見出し構造</div>`;
+  if (r.headings.headings.length === 0) {
+    html += `<div class="check-item"><div class="status-dot error"></div><div class="check-content"><div class="check-name">見出しなし</div></div></div>`;
+  } else {
+    if (r.headings.h1Count === 0) html += `<div class="check-item"><div class="status-dot error"></div><div class="check-content"><div class="check-detail error-text">h1が設定されていません</div></div></div>`;
+    else if (r.headings.h1Count > 1) html += `<div class="check-item"><div class="status-dot warn"></div><div class="check-content"><div class="check-detail warn-text">h1が${r.headings.h1Count}個あります（1個推奨）</div></div></div>`;
+    r.headings.headings.forEach(h => {
+      const indent = (h.level - 1) * 12;
+      const dotClass = h.skip ? 'error' : 'ok';
+      const textClass = h.skip ? 'error-text' : '';
+      const skipLabel = h.skip ? ` <span style="color:var(--error);font-size:10px">← スキップ!</span>` : '';
+      html += `<div class="check-item" style="padding-left:${16 + indent}px"><div class="status-dot ${dotClass}" style="margin-top:5px;flex-shrink:0"></div><div class="check-content"><div class="check-detail ${textClass}" style="font-size:11px"><span style="color:var(--muted);margin-right:4px">h${h.level}</span>${h.text || '（テキストなし）'}${skipLabel}</div></div></div>`;
+    });
+  }
+  html += `<div class="divider" style="margin-top:4px"></div>`;
+
   const psiUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(pageUrl)}`;
   html += `<div class="section-title">パフォーマンス</div><a class="psi-link" href="${psiUrl}" target="_blank"><span>⚡</span> PageSpeed Insights で確認 →</a><div class="divider"></div>`;
+
   const sections = {};
   items.forEach(item => { if (!sections[item.section]) sections[item.section] = []; sections[item.section].push(item); });
   Object.entries(sections).forEach(([section, sectionItems]) => {

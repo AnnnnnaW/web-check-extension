@@ -1,4 +1,4 @@
-// State 1: 見出し構造改善前のcontent.js
+// State 2: 見出し構造ツリー追加済み・ogDescription追加前
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'runChecks') { sendResponse(runAllChecks()); }
@@ -53,8 +53,21 @@ function checkNoindex() {
 }
 
 function checkHeadings() {
-  const h1 = document.querySelectorAll('h1');
-  return { h1Count: h1.length, h2Count: document.querySelectorAll('h2').length, h3Count: document.querySelectorAll('h3').length, h1Text: h1[0]?.textContent?.trim() || '未設定', status: h1.length === 1 ? 'ok' : h1.length === 0 ? 'error' : 'warn' };
+  const nodes = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6'));
+  const headings = nodes.map(el => ({ level: parseInt(el.tagName[1]), text: el.textContent.trim().replace(/\s+/g, ' ').substring(0, 60) }));
+  const issues = [];
+  let prevLevel = 0;
+  const annotated = headings.map(h => {
+    let skip = false;
+    if (prevLevel > 0 && h.level > prevLevel + 1) { issues.push(`h${prevLevel}→h${h.level} のスキップ`); skip = true; }
+    prevLevel = h.level;
+    return { ...h, skip };
+  });
+  const h1Count = headings.filter(h => h.level === 1).length;
+  let status = 'ok';
+  if (h1Count === 0 || issues.length > 0) status = 'error';
+  else if (h1Count > 1) status = 'warn';
+  return { headings: annotated, h1Count, issues, status };
 }
 
 function checkConsoleErrors() {
