@@ -116,11 +116,26 @@ function renderResults(r, pageUrl) {
 
   // リンク
   const linkStatus = r.links.status;
-  if (linkStatus === 'warn') warnCount++;
+  if (linkStatus === 'error') errorCount++;
+  else if (linkStatus === 'warn') warnCount++;
   else okCount++;
+  const linkLines = [];
+  if (r.links.brokenCount > 0) {
+    linkLines.push(`リンク切れ ${r.links.brokenCount}件`);
+    r.links.brokenList.slice(0, 10).forEach(b => {
+      linkLines.push(`・${escapeHtml(b.href)}（${b.status === 0 ? '接続失敗' : b.status}）`);
+    });
+    if (r.links.brokenList.length > 10) linkLines.push(`ほか ${r.links.brokenList.length - 10}件`);
+  }
+  if (r.links.empty > 0) linkLines.push(`空リンク ${r.links.empty}個あり`);
+  if (linkLines.length === 0) linkLines.push('問題なし');
+  linkLines.push(`内部:${r.links.internal}本 外部:${r.links.external}本`);
+  if (r.links.brokenCheckFailed) linkLines.push('※リンク切れ確認に失敗しました');
+  else if (r.links.skipped > 0) linkLines.push(`※内部リンクは先頭${r.links.checked}件のみ確認`);
+  if (r.links.external > 0) linkLines.push('※外部リンクの存在確認は対象外');
   items.push({ section: 'アクセシビリティ', status: linkStatus, name: 'リンク確認',
-    detail: linkStatus === 'warn' ? `空リンク ${r.links.empty}個あり（内部:${r.links.internal} 外部:${r.links.external}）` : `内部:${r.links.internal}本 外部:${r.links.external}本 問題なし`,
-    detailClass: linkStatus === 'warn' ? 'warn-text' : '' });
+    detail: linkLines.join('<br>'),
+    detailClass: linkStatus === 'error' ? 'error-text' : linkStatus === 'warn' ? 'warn-text' : '' });
 
   // GA4
   const ga4Status = r.analytics.ga4.status;
@@ -267,4 +282,8 @@ function buildOgpCard(meta, pageUrl) {
         <div class="ogp-preview-desc${desc ? '' : ' ogp-missing'}">${desc || 'og:description 未設定'}</div>
       </div>
     </div>`;
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

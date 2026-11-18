@@ -1,2 +1,4 @@
 *.bak
 .DS_Store
+dist/
+_to_delete/

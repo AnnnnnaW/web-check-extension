@@ -3,9 +3,13 @@
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'runChecks') {
     const results = runAllChecks();
-    sendResponse(results);
+    // 内部リンクの存在確認は非同期で行い、結果に追記して返す
+    checkBrokenLinks()
+      .then(broken => { results.links = mergeBrokenLinks(results.links, broken); })
+      .catch(() => { results.links.brokenCheckFailed = true; })
+      .finally(() => sendResponse(results));
+    return true; // 非同期でsendResponseするため
   }
-  return true;
 });
 
 function runAllChecks() {
@@ -50,9 +54,12 @@ function checkMeta() {
 // ===== 画像ALT属性 =====
 function checkImages() {
   const images = Array.from(document.querySelectorAll('img'));
-  const missing = images.filter(img => !img.alt && !img.getAttribute('role') === 'presentation');
-  const decorative = images.filter(img => img.alt === '');
-  const withAlt = images.filter(img => img.alt && img.alt !== '');
+  // alt属性そのものが無い画像（role="presentation"/"none" は装飾扱いで除外）
+  const isPresentational = img => ['presentation', 'none'].includes((img.getAttribute('role') || '').toLowerCase());
+  const missing = images.filter(img => !img.hasAttribute('alt') && !isPresentational(img));
+  // alt="" を明示した装飾画像
+  const decorative = images.filter(img => img.hasAttribute('alt') && img.getAttribute('alt').trim() === '');
+  const withAlt = images.filter(img => img.hasAttribute('alt') && img.getAttribute('alt').trim() !== '');
 
   return {
     total: images.length,
@@ -87,6 +94,77 @@ function checkLinks() {
     external: external.length,
     empty: empty.length,
     status: empty.length > 0 ? 'warn' : 'ok',
+  };
+}
+
+// ===== リンク切れ確認（同一オリジンのリンクのみ） =====
+// host_permissions なしでも、ページと同じオリジンへの fetch は content script から可能。
+// 外部リンクは CORS によりステータスが読めないため対象外。
+const LINK_CHECK_MAX = 100;        // 1ページあたりの確認上限
+const LINK_CHECK_CONCURRENCY = 5;  // 同時リクエスト数
+const LINK_CHECK_TIMEOUT = 8000;   // 1リクエストのタイムアウト(ms)
+
+async function checkBrokenLinks() {
+  const targets = new Map(); // URL(ハッシュ除去) -> 表示用のhref
+  for (const a of document.querySelectorAll('a[href]')) {
+    const raw = a.getAttribute('href').trim();
+    if (!raw || raw.startsWith('#') || /^(mailto|tel|javascript|data):/i.test(raw)) continue;
+    let url;
+    try { url = new URL(raw, document.baseURI); } catch { continue; }
+    if (url.origin !== window.location.origin) continue;
+    url.hash = '';
+    if (!targets.has(url.href)) targets.set(url.href, raw);
+  }
+
+  const entries = Array.from(targets.entries());
+  const checked = entries.slice(0, LINK_CHECK_MAX);
+  const broken = [];
+
+  let index = 0;
+  async function worker() {
+    while (index < checked.length) {
+      const [url, raw] = checked[index++];
+      const status = await fetchStatus(url);
+      if (status === 0 || status >= 400) broken.push({ href: raw, status });
+    }
+  }
+  await Promise.all(Array.from({ length: LINK_CHECK_CONCURRENCY }, worker));
+
+  return { checked: checked.length, skipped: entries.length - checked.length, broken };
+}
+
+async function fetchStatus(url) {
+  const tryFetch = async (method) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), LINK_CHECK_TIMEOUT);
+    try {
+      const res = await fetch(url, { method, redirect: 'follow', cache: 'no-store', credentials: 'same-origin', signal: ctrl.signal });
+      return res.status;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  try {
+    let status = await tryFetch('HEAD');
+    // HEAD非対応のサーバー向けにGETで再確認
+    if (status === 405 || status === 501) status = await tryFetch('GET');
+    return status;
+  } catch {
+    return 0; // ネットワークエラー・タイムアウト
+  }
+}
+
+function mergeBrokenLinks(links, result) {
+  const brokenCount = result.broken.length;
+  let status = links.status;
+  if (brokenCount > 0) status = 'error';
+  return {
+    ...links,
+    checked: result.checked,
+    skipped: result.skipped,
+    brokenCount,
+    brokenList: result.broken,
+    status,
   };
 }
 
